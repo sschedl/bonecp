@@ -17,6 +17,7 @@
 package com.jolbox.bonecp;
 
 import java.io.Closeable;
+import java.io.IOException;
 import java.io.Serializable;
 import java.lang.management.ManagementFactory;
 import java.lang.ref.Reference;
@@ -320,6 +321,7 @@ public class BoneCP implements Serializable, Closeable {
 	 * @return Connection handle
 	 * @throws SQLException on error
 	 */
+	@SuppressWarnings("resource")
 	protected Connection obtainRawInternalConnection()
 	throws SQLException {
 		Connection result = null;
@@ -471,7 +473,7 @@ public class BoneCP implements Serializable, Closeable {
 
 			if (this.config.getIdleConnectionTestPeriod(TimeUnit.SECONDS) > 0 || this.config.getIdleMaxAge(TimeUnit.SECONDS) > 0){
 
-				final Runnable connectionTester = new ConnectionTesterThread(connectionPartition, this, this.config.getIdleMaxAge(TimeUnit.MILLISECONDS), this.config.getIdleConnectionTestPeriod(TimeUnit.MILLISECONDS), queueLIFO);
+				final Runnable connectionTester = new ConnectionTesterThread(connectionPartition, this.keepAliveScheduler, this, this.config.getIdleMaxAge(TimeUnit.MILLISECONDS), this.config.getIdleConnectionTestPeriod(TimeUnit.MILLISECONDS), queueLIFO);
 				long delayInSeconds = this.config.getIdleConnectionTestPeriod(TimeUnit.SECONDS);
 				if (delayInSeconds == 0L){
 					delayInSeconds = this.config.getIdleMaxAge(TimeUnit.SECONDS);
@@ -481,13 +483,13 @@ public class BoneCP implements Serializable, Closeable {
 						&& this.config.getIdleMaxAge(TimeUnit.SECONDS) != 0){
 					delayInSeconds = this.config.getIdleMaxAge(TimeUnit.SECONDS);
 				}
-				this.keepAliveScheduler.scheduleAtFixedRate(connectionTester,delayInSeconds, delayInSeconds, TimeUnit.SECONDS);
+				this.keepAliveScheduler.schedule(connectionTester, delayInSeconds, TimeUnit.SECONDS);
 			}
 
 
 			if (this.config.getMaxConnectionAgeInSeconds() > 0){
-				final Runnable connectionMaxAgeTester = new ConnectionMaxAgeThread(connectionPartition, this, this.config.getMaxConnectionAge(TimeUnit.MILLISECONDS), queueLIFO);
-				this.maxAliveScheduler.scheduleAtFixedRate(connectionMaxAgeTester, this.config.getMaxConnectionAgeInSeconds(), this.config.getMaxConnectionAgeInSeconds(), TimeUnit.SECONDS);
+				final Runnable connectionMaxAgeTester = new ConnectionMaxAgeThread(connectionPartition, this.maxAliveScheduler, this, this.config.getMaxConnectionAge(TimeUnit.MILLISECONDS), queueLIFO);
+				this.maxAliveScheduler.schedule(connectionMaxAgeTester, this.config.getMaxConnectionAgeInSeconds(), TimeUnit.SECONDS);
 			}
 			// watch this partition for low no of threads
 			this.connectionsScheduler.execute(new PoolWatchThread(connectionPartition, this));

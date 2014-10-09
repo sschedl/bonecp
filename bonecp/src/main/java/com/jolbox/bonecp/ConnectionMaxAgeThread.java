@@ -17,6 +17,8 @@
 
 package com.jolbox.bonecp;
 
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,6 +34,8 @@ public class ConnectionMaxAgeThread implements Runnable {
 	private long maxAgeInMs;
 	/** Partition being handled. */
 	private ConnectionPartition partition;
+	/** Scheduler handle. **/
+	private ScheduledExecutorService scheduler;
 	/** Handle to connection pool. */
 	private BoneCP pool;
 	/** If true, we're operating in a LIFO fashion. */ 
@@ -46,9 +50,10 @@ public class ConnectionMaxAgeThread implements Runnable {
 	 * @param maxAgeInMs Threads older than this are killed off 
 	 * @param lifoMode if true, we're running under a lifo fashion.
 	 */
-	protected ConnectionMaxAgeThread(ConnectionPartition connectionPartition,  
+	protected ConnectionMaxAgeThread(ConnectionPartition connectionPartition, ScheduledExecutorService scheduler, 
 			BoneCP pool, long maxAgeInMs, boolean lifoMode){
 		this.partition = connectionPartition;
+		this.scheduler = scheduler;
 		this.maxAgeInMs = maxAgeInMs;
 		this.pool = pool;
 		this.lifoMode = lifoMode;
@@ -97,10 +102,18 @@ public class ConnectionMaxAgeThread implements Runnable {
 					Thread.sleep(20L); // test slowly, this is not an operation that we're in a hurry to deal with (avoid CPU spikes)...
 				}
 			}  catch (Throwable e) {
+				if (this.scheduler.isShutdown()){
+					logger.debug("Shutting down connection max age thread.");
+				} else {
 					logger.error("Connection max age thread exception.", e);
+				}
 			}
 
 		} // throw it back on the queue
+
+		if (!this.scheduler.isShutdown()){
+			this.scheduler.schedule(this, nextCheckInMs, TimeUnit.MILLISECONDS);
+		}
 
 	}
 
